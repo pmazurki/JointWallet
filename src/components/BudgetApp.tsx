@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Share2, Users } from 'lucide-react';
 import {
   Transaction,
   TransactionType,
@@ -13,19 +13,32 @@ import {
   RecurrencePeriod,
   BudgetSummary,
   FinancialHealth,
+  SharedExpense,
+  Participant,
 } from '@/types';
+import { createTransactionHash, createSharedExpenseHash } from '@/utils/hash';
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = ['Jedzenie', 'Transport', 'Rozrywka', 'Mieszkanie', 'Inne'];
 const INCOME_CATEGORIES: IncomeCategory[] = ['Wynagrodzenie', 'Freelance', 'Inwestycje', 'Prezent', 'Inne'];
 
 const BudgetApp = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [sharedExpenses, setSharedExpenses] = useState<SharedExpense[]>([]);
   const [transactionType, setTransactionType] = useState<TransactionType>('expense');
   const [selectedCategory, setSelectedCategory] = useState<ExpenseCategory | IncomeCategory>('Jedzenie');
   const [amount, setAmount] = useState<string>('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurrencePeriod, setRecurrencePeriod] = useState<RecurrencePeriod>('monthly');
   const [summaryPeriod, setSummaryPeriod] = useState<RecurrencePeriod>('monthly');
+
+  // Współdzielone wydatki
+  const [showSharedExpenseModal, setShowSharedExpenseModal] = useState(false);
+  const [sharedExpenseName, setSharedExpenseName] = useState('');
+  const [participants, setParticipants] = useState<Participant[]>([
+    { id: '1', name: 'Ja', percentage: 50, color: '#3b82f6' },
+    { id: '2', name: 'Partner', percentage: 50, color: '#10b981' }
+  ]);
+  const [currentUserId] = useState('1'); // ID aktualnego użytkownika
 
   // Load transactions from localStorage on mount
   useEffect(() => {
@@ -43,6 +56,21 @@ const BudgetApp = () => {
         console.error('Error loading transactions:', error);
       }
     }
+
+    // Load shared expenses
+    const savedSharedExpenses = localStorage.getItem('sharedExpenses');
+    if (savedSharedExpenses) {
+      try {
+        const parsed = JSON.parse(savedSharedExpenses);
+        const withDates = parsed.map((e: any) => ({
+          ...e,
+          date: new Date(e.date),
+        }));
+        setSharedExpenses(withDates);
+      } catch (error) {
+        console.error('Error loading shared expenses:', error);
+      }
+    }
   }, []);
 
   // Save transactions to localStorage whenever they change
@@ -51,6 +79,13 @@ const BudgetApp = () => {
       localStorage.setItem('budgetTransactions', JSON.stringify(transactions));
     }
   }, [transactions]);
+
+  // Save shared expenses to localStorage
+  useEffect(() => {
+    if (sharedExpenses.length > 0) {
+      localStorage.setItem('sharedExpenses', JSON.stringify(sharedExpenses));
+    }
+  }, [sharedExpenses]);
 
   // Update selected category when transaction type changes
   useEffect(() => {
@@ -61,7 +96,7 @@ const BudgetApp = () => {
     }
   }, [transactionType]);
 
-  const addTransaction = () => {
+  const addTransaction = async () => {
     const numAmount = parseFloat(amount);
 
     if (isNaN(numAmount) || numAmount <= 0) {
@@ -69,12 +104,23 @@ const BudgetApp = () => {
       return;
     }
 
+    const date = new Date();
+    const hash = await createTransactionHash(
+      transactionType,
+      selectedCategory,
+      numAmount,
+      date,
+      isRecurring,
+      isRecurring ? recurrencePeriod : undefined
+    );
+
     const newTransaction: Transaction = {
       id: Date.now().toString(),
+      hash,
       type: transactionType,
       category: selectedCategory,
       amount: numAmount,
-      date: new Date(),
+      date,
       isRecurring,
       recurrencePeriod: isRecurring ? recurrencePeriod : undefined,
     };
@@ -83,8 +129,127 @@ const BudgetApp = () => {
     setAmount('');
   };
 
+  const addSharedExpense = async () => {
+    const numAmount = parseFloat(amount);
+
+    if (isNaN(numAmount) || numAmount <= 0) {
+      alert('Proszę wprowadzić prawidłową kwotę');
+      return;
+    }
+
+    if (!sharedExpenseName.trim()) {
+      alert('Proszę wprowadzić nazwę wydatku');
+      return;
+    }
+
+    const totalPercentage = participants.reduce((sum, p) => sum + p.percentage, 0);
+    if (Math.abs(totalPercentage - 100) > 0.01) {
+      alert('Suma procentów musi wynosić 100%');
+      return;
+    }
+
+    const date = new Date();
+    const hash = await createSharedExpenseHash(
+      sharedExpenseName,
+      numAmount,
+      selectedCategory as ExpenseCategory,
+      date,
+      participants.map(p => p.id)
+    );
+
+    const newSharedExpense: SharedExpense = {
+      id: Date.now().toString(),
+      hash,
+      name: sharedExpenseName,
+      totalAmount: numAmount,
+      category: selectedCategory as ExpenseCategory,
+      date,
+      isRecurring,
+      recurrencePeriod: isRecurring ? recurrencePeriod : undefined,
+      participants: [...participants],
+      createdBy: currentUserId,
+    };
+
+    setSharedExpenses([newSharedExpense, ...sharedExpenses]);
+
+    // Dodaj transakcję dla mojego udziału
+    const myParticipant = participants.find(p => p.id === currentUserId);
+    if (myParticipant) {
+      const myShare = (numAmount * myParticipant.percentage) / 100;
+      const myTransactionHash = await createTransactionHash(
+        'expense',
+        selectedCategory,
+        myShare,
+        date,
+        isRecurring,
+        isRecurring ? recurrencePeriod : undefined
+      );
+
+      const myTransaction: Transaction = {
+        id: (Date.now() + 1).toString(),
+        hash: myTransactionHash,
+        type: 'expense',
+        category: selectedCategory as ExpenseCategory,
+        amount: myShare,
+        date,
+        isRecurring,
+        recurrencePeriod: isRecurring ? recurrencePeriod : undefined,
+        isShared: true,
+        sharedExpenseId: newSharedExpense.id,
+        myShare,
+      };
+
+      setTransactions([myTransaction, ...transactions]);
+    }
+
+    setAmount('');
+    setSharedExpenseName('');
+    setShowSharedExpenseModal(false);
+  };
+
   const deleteTransaction = (id: string) => {
     setTransactions(transactions.filter(t => t.id !== id));
+  };
+
+  const deleteSharedExpense = (id: string) => {
+    // Usuń współdzielony wydatek
+    setSharedExpenses(sharedExpenses.filter(e => e.id !== id));
+    // Usuń powiązane transakcje
+    setTransactions(transactions.filter(t => t.sharedExpenseId !== id));
+  };
+
+  const updateParticipantPercentage = (participantId: string, percentage: number) => {
+    setParticipants(participants.map(p =>
+      p.id === participantId ? { ...p, percentage } : p
+    ));
+  };
+
+  const addParticipant = () => {
+    const newId = (participants.length + 1).toString();
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+    setParticipants([
+      ...participants,
+      {
+        id: newId,
+        name: `Osoba ${participants.length + 1}`,
+        percentage: 0,
+        color: colors[participants.length % colors.length]
+      }
+    ]);
+  };
+
+  const removeParticipant = (participantId: string) => {
+    if (participants.length <= 2) {
+      alert('Muszą być co najmniej 2 osoby');
+      return;
+    }
+    setParticipants(participants.filter(p => p.id !== participantId));
+  };
+
+  const updateParticipantName = (participantId: string, name: string) => {
+    setParticipants(participants.map(p =>
+      p.id === participantId ? { ...p, name } : p
+    ));
   };
 
   // Calculate days in period
@@ -319,7 +484,156 @@ const BudgetApp = () => {
             <Button onClick={addTransaction} className="min-w-[80px]">
               Dodaj
             </Button>
+
+            {transactionType === 'expense' && (
+              <Button
+                onClick={() => setShowSharedExpenseModal(true)}
+                variant="outline"
+                className="min-w-[140px] flex items-center gap-2"
+              >
+                <Share2 className="h-4 w-4" />
+                Współdzielony
+              </Button>
+            )}
           </div>
+
+          {/* Modal współdzielonego wydatku */}
+          {showSharedExpenseModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <CardHeader>
+                  <h3 className="text-2xl font-bold flex items-center gap-2">
+                    <Users className="h-6 w-6" />
+                    Współdzielony Wydatek
+                  </h3>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Nazwa wydatku */}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Nazwa wydatku</label>
+                    <Input
+                      placeholder="np. Czynsz, Media, Zakupy"
+                      value={sharedExpenseName}
+                      onChange={(e) => setSharedExpenseName(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Kategoria i kwota */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">Kategoria</label>
+                      <div className="flex flex-wrap gap-2">
+                        {EXPENSE_CATEGORIES.map((category) => (
+                          <Button
+                            key={category}
+                            size="sm"
+                            variant={selectedCategory === category ? 'default' : 'outline'}
+                            onClick={() => setSelectedCategory(category)}
+                          >
+                            {category}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">Całkowita kwota</label>
+                      <Input
+                        type="number"
+                        placeholder="0.00"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Uczestnicy */}
+                  <div>
+                    <div className="flex justify-between items-center mb-3">
+                      <label className="text-sm font-medium">Podział kosztów</label>
+                      <Button size="sm" variant="outline" onClick={addParticipant}>
+                        + Dodaj osobę
+                      </Button>
+                    </div>
+
+                    <div className="space-y-3">
+                      {participants.map((participant) => (
+                        <div
+                          key={participant.id}
+                          className="flex items-center gap-3 p-3 rounded-lg border"
+                          style={{ borderLeftColor: participant.color, borderLeftWidth: '4px' }}
+                        >
+                          <div className="flex-1">
+                            <Input
+                              placeholder="Imię"
+                              value={participant.name}
+                              onChange={(e) => updateParticipantName(participant.id, e.target.value)}
+                              className="mb-2"
+                            />
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.1"
+                                value={participant.percentage}
+                                onChange={(e) => updateParticipantPercentage(participant.id, parseFloat(e.target.value) || 0)}
+                                className="w-20"
+                              />
+                              <span className="text-sm">%</span>
+                              {amount && (
+                                <span className="text-sm text-muted-foreground ml-2">
+                                  = {formatCurrency((parseFloat(amount) || 0) * participant.percentage / 100)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {participants.length > 2 && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => removeParticipant(participant.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Suma procentów */}
+                    <div className="mt-3 p-2 rounded bg-muted">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium">Suma procentów:</span>
+                        <span className={`font-bold ${
+                          Math.abs(participants.reduce((sum, p) => sum + p.percentage, 0) - 100) < 0.01
+                            ? 'text-green-600'
+                            : 'text-red-600'
+                        }`}>
+                          {participants.reduce((sum, p) => sum + p.percentage, 0).toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Przyciski */}
+                  <div className="flex gap-2 pt-4">
+                    <Button onClick={addSharedExpense} className="flex-1">
+                      Utwórz współdzielony wydatek
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowSharedExpenseModal(false);
+                        setSharedExpenseName('');
+                      }}
+                    >
+                      Anuluj
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           {/* Transactions List */}
           <div>
@@ -347,10 +661,21 @@ const BudgetApp = () => {
                             {getPeriodLabel(transaction.recurrencePeriod!)}
                           </Badge>
                         )}
+                        {transaction.isShared && (
+                          <Badge variant="secondary" className="text-xs flex items-center gap-1">
+                            <Share2 className="h-3 w-3" />
+                            Współdzielony
+                          </Badge>
+                        )}
                       </div>
                       <span className="text-xs text-muted-foreground">
                         {formatDate(transaction.date)}
                       </span>
+                      {transaction.hash && (
+                        <div className="text-xs font-mono text-muted-foreground mt-1">
+                          Hash: {transaction.hash.substring(0, 12)}...
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-3">
                       <span
@@ -420,6 +745,109 @@ const BudgetApp = () => {
               ))}
             </Tabs>
           </div>
+
+          {/* Shared Expenses Section */}
+          {sharedExpenses.length > 0 && (
+            <div>
+              <h3 className="text-xl font-semibold mb-3 flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Współdzielone Wydatki
+              </h3>
+              <div className="space-y-3">
+                {sharedExpenses.map((expense) => {
+                  const myParticipant = expense.participants.find(p => p.id === currentUserId);
+                  const myShare = myParticipant ? (expense.totalAmount * myParticipant.percentage) / 100 : 0;
+
+                  return (
+                    <div
+                      key={expense.id}
+                      className="p-4 rounded-lg border border-purple-200 bg-purple-50"
+                    >
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-bold text-lg">{expense.name}</h4>
+                            <Badge variant="outline">{expense.category}</Badge>
+                            {expense.isRecurring && (
+                              <Badge variant="outline" className="text-xs">
+                                {getPeriodLabel(expense.recurrencePeriod!)}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            {formatDate(expense.date)}
+                          </p>
+                          <div className="flex items-center gap-2 text-xs font-mono bg-white p-2 rounded border">
+                            <span className="text-muted-foreground">Hash:</span>
+                            <span className="text-purple-600 font-semibold">{expense.hash.substring(0, 16)}...</span>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteSharedExpense(expense.id)}
+                          className="hover:bg-destructive hover:text-destructive-foreground"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      {/* Total amount */}
+                      <div className="mb-3 p-3 bg-white rounded border">
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium">Całkowita kwota:</span>
+                          <span className="font-bold text-lg text-purple-600">
+                            {formatCurrency(expense.totalAmount)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Participants breakdown */}
+                      <div className="space-y-2">
+                        <span className="text-sm font-medium">Podział:</span>
+                        {expense.participants.map((participant) => {
+                          const participantShare = (expense.totalAmount * participant.percentage) / 100;
+                          const isMe = participant.id === currentUserId;
+
+                          return (
+                            <div
+                              key={participant.id}
+                              className={`flex justify-between items-center p-2 rounded ${
+                                isMe ? 'bg-blue-100 border border-blue-300' : 'bg-white border'
+                              }`}
+                              style={{ borderLeftColor: participant.color, borderLeftWidth: '3px' }}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">
+                                  {participant.name} {isMe && '(Ty)'}
+                                </span>
+                                <Badge variant="outline" className="text-xs">
+                                  {participant.percentage}%
+                                </Badge>
+                              </div>
+                              <span className="font-semibold">
+                                {formatCurrency(participantShare)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* My share highlight */}
+                      <div className="mt-3 p-3 bg-blue-600 text-white rounded">
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium">Twoja część do zapłaty:</span>
+                          <span className="font-bold text-xl">
+                            {formatCurrency(myShare)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Financial Health Indicator */}
           <div className="flex justify-between items-center p-4 rounded-lg bg-muted">

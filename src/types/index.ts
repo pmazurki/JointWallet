@@ -27,3 +27,57 @@ export interface FinancialHealth {
   status: 'Krytyczny' | 'Słaby' | 'Dobry' | 'Bardzo dobry' | 'Doskonały';
   variant: 'destructive' | 'secondary' | 'default' | 'outline';
 }
+
+// Multi-budget system types
+export type BudgetType = 'personal' | 'shared';
+
+export interface BudgetShareInfo {
+  shareToken: string;
+  sharedWith: string[]; // List of user identifiers (could be emails or usernames)
+  createdAt: Date;
+  lastSyncedAt?: Date;
+}
+
+export interface Budget {
+  id: string;
+  name: string;
+  type: BudgetType;
+  transactions: Transaction[];
+  shareInfo?: BudgetShareInfo;
+  createdAt: Date;
+  color?: string; // For UI differentiation
+}
+
+export interface User {
+  id: string;
+  name: string;
+  createdAt: Date;
+}
+
+export interface AppData {
+  version: string;
+  user: User;
+  budgets: Budget[];
+  activeBudgetId: string;
+}
+
+// Advanced budgeting rules (50/30/20 method)
+export interface BudgetAllocation {
+  needs: number; // 50% - essential expenses (Jedzenie, Mieszkanie, Transport)
+  wants: number; // 30% - discretionary spending (Rozrywka, Inne)
+  savings: number; // 20% - savings and investments
+}
+
+export interface BudgetRule {
+  type: '50/30/20' | 'envelope' | 'zero-based';
+  allocation: BudgetAllocation;
+  warnings: string[];
+}
+
+// Envelope budgeting
+export interface Envelope {
+  category: ExpenseCategory;
+  allocated: number;
+  spent: number;
+  remaining: number;
+}

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Trash2, Lock, Plus, Users, Share2, Copy, Check } from 'lucide-react';
+import { Trash2, Lock, Plus, Users, Share2, Copy, Check, Calculator, Zap } from 'lucide-react';
 import {
   Transaction,
   TransactionType,
@@ -18,6 +18,8 @@ import {
   BudgetType,
 } from '@/types';
 import { PINAuth } from './PINAuth';
+import { DailyBudgetTracker } from './DailyBudgetTracker';
+import { QuickExpenseTracker } from './QuickExpenseTracker';
 import {
   saveEncryptedData,
   loadEncryptedData,
@@ -27,6 +29,7 @@ import {
 } from '@/lib/storage';
 import { generateShareToken } from '@/lib/encryption';
 import { calculate503020Rule } from '@/lib/budgetRules';
+import { calculateBalance } from '@/lib/bankReconciliation';
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = ['Jedzenie', 'Transport', 'Rozrywka', 'Mieszkanie', 'Inne'];
 const INCOME_CATEGORIES: IncomeCategory[] = ['Wynagrodzenie', 'Freelance', 'Inwestycje', 'Prezent', 'Inne'];
@@ -48,6 +51,11 @@ const BudgetApp = () => {
   // UI state
   const [showShareModal, setShowShareModal] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
+  const [activeView, setActiveView] = useState<'budget' | 'daily' | 'quick'>('budget');
+
+  // Budget planning state
+  const [monthlyIncome] = useState<number>(3000); // Default
+  const [fixedExpenses] = useState<number>(1500); // Default
 
   // Initialize app data
   const initializeAppData = (): AppData => {
@@ -518,7 +526,63 @@ const BudgetApp = () => {
             </Button>
           </div>
 
-          {/* Transaction Type Tabs */}
+          {/* View Selector */}
+          <div className="flex gap-2 p-1 bg-muted rounded-lg">
+            <Button
+              variant={activeView === 'daily' ? 'default' : 'ghost'}
+              onClick={() => setActiveView('daily')}
+              className="flex-1 flex items-center gap-2"
+            >
+              <Calculator className="w-4 h-4" />
+              Dzienny Budżet
+            </Button>
+            <Button
+              variant={activeView === 'quick' ? 'default' : 'ghost'}
+              onClick={() => setActiveView('quick')}
+              className="flex-1 flex items-center gap-2"
+            >
+              <Zap className="w-4 h-4" />
+              Szybkie Wydatki
+            </Button>
+            <Button
+              variant={activeView === 'budget' ? 'default' : 'ghost'}
+              onClick={() => setActiveView('budget')}
+              className="flex-1"
+            >
+              Pełny Budżet
+            </Button>
+          </div>
+
+          {/* Daily Budget View */}
+          {activeView === 'daily' && (
+            <DailyBudgetTracker
+              transactions={activeBudget.transactions}
+              monthlyIncome={monthlyIncome}
+              fixedExpenses={fixedExpenses}
+              currentSavings={calculateBalance(activeBudget.transactions)}
+            />
+          )}
+
+          {/* Quick Expense View */}
+          {activeView === 'quick' && (
+            <QuickExpenseTracker
+              transactions={activeBudget.transactions}
+              currentBalance={calculateBalance(activeBudget.transactions)}
+              onAddTransaction={(tx) => {
+                const updatedBudgets = appData.budgets.map((budget: Budget) =>
+                  budget.id === activeBudgetId
+                    ? { ...budget, transactions: [tx, ...budget.transactions] }
+                    : budget
+                );
+                saveAppData({ ...appData, budgets: updatedBudgets });
+              }}
+            />
+          )}
+
+          {/* Full Budget View (original) */}
+          {activeView === 'budget' && (
+            <>
+              {/* Transaction Type Tabs */}
           <Tabs value={transactionType} onValueChange={(v: string) => setTransactionType(v as TransactionType)}>
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="expense">Wydatki</TabsTrigger>
@@ -750,6 +814,8 @@ const BudgetApp = () => {
                 )}
               </div>
             </div>
+          )}
+            </>
           )}
         </CardContent>
       </Card>

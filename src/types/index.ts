@@ -81,3 +81,48 @@ export interface Envelope {
   spent: number;
   remaining: number;
 }
+
+// Daily budget tracking
+export interface DailyBudget {
+  date: Date;
+  allocated: number; // Budżet przydzielony na ten dzień
+  spent: number; // Wydane tego dnia
+  remaining: number; // Pozostało
+  carriedOver: number; // Przeniesione z poprzedniego dnia
+}
+
+// Quick transaction (bez dokładnej kwoty)
+export interface QuickTransaction {
+  id: string;
+  type: TransactionType;
+  category: ExpenseCategory | IncomeCategory;
+  estimatedAmount: number; // Szacowana kwota
+  actualAmount?: number; // Rzeczywista kwota (po korekcie)
+  date: Date;
+  needsReconciliation: boolean; // Czy wymaga korekty
+  description?: string;
+}
+
+// Bank reconciliation
+export interface BankReconciliation {
+  id: string;
+  date: Date;
+  reportedBalance: number; // Saldo z banku
+  calculatedBalance: number; // Wyliczone saldo
+  difference: number; // Różnica
+  reconciled: boolean; // Czy skorygowano
+  adjustmentTransactionId?: string; // ID transakcji korygującej
+}
+
+// Advanced budget planning
+export interface BudgetPlan {
+  budgetId: string;
+  dailyAllowance: number; // Ile można wydać dziennie
+  totalIncome: number; // Całkowity przychód
+  fixedExpenses: number; // Stałe wydatki
+  variableExpenses: number; // Zmienne wydatki
+  savingsGoal: number; // Cel oszczędności
+  currentSavings: number; // Obecne oszczędności
+  daysInPeriod: number; // Dni w okresie
+  recommendations: string[]; // Rekomendacje
+}

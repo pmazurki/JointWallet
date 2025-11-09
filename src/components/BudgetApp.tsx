@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,13 +16,14 @@ import {
   FinancialHealth,
 } from '@/types';
 
-const EXPENSE_CATEGORIES: ExpenseCategory[] = ['Jedzenie', 'Transport', 'Rozrywka', 'Mieszkanie', 'Inne'];
-const INCOME_CATEGORIES: IncomeCategory[] = ['Wynagrodzenie', 'Freelance', 'Inwestycje', 'Prezent', 'Inne'];
+const EXPENSE_CATEGORIES: ExpenseCategory[] = ['food', 'transport', 'entertainment', 'housing', 'other'];
+const INCOME_CATEGORIES: IncomeCategory[] = ['salary', 'freelance', 'investments', 'gift', 'other'];
 
 const BudgetApp = () => {
+  const { t, i18n } = useTranslation();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionType, setTransactionType] = useState<TransactionType>('expense');
-  const [selectedCategory, setSelectedCategory] = useState<ExpenseCategory | IncomeCategory>('Jedzenie');
+  const [selectedCategory, setSelectedCategory] = useState<ExpenseCategory | IncomeCategory>('food');
   const [amount, setAmount] = useState<string>('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurrencePeriod, setRecurrencePeriod] = useState<RecurrencePeriod>('monthly');
@@ -55,9 +57,9 @@ const BudgetApp = () => {
   // Update selected category when transaction type changes
   useEffect(() => {
     if (transactionType === 'expense') {
-      setSelectedCategory('Jedzenie');
+      setSelectedCategory('food');
     } else {
-      setSelectedCategory('Wynagrodzenie');
+      setSelectedCategory('salary');
     }
   }, [transactionType]);
 
@@ -65,7 +67,7 @@ const BudgetApp = () => {
     const numAmount = parseFloat(amount);
 
     if (isNaN(numAmount) || numAmount <= 0) {
-      alert('Proszę wprowadzić prawidłową kwotę');
+      alert(t('messages.invalidAmount'));
       return;
     }
 
@@ -142,7 +144,7 @@ const BudgetApp = () => {
     const { totalIncome, totalExpenses, balance } = budgetSummary;
 
     if (totalIncome === 0) {
-      return { score: 0, status: 'Krytyczny', variant: 'destructive' };
+      return { score: 0, status: 'critical', variant: 'destructive' };
     }
 
     const savingsRate = (balance / totalIncome) * 100;
@@ -173,19 +175,19 @@ const BudgetApp = () => {
     let variant: FinancialHealth['variant'];
 
     if (score >= 80) {
-      status = 'Doskonały';
+      status = 'excellent';
       variant = 'default';
     } else if (score >= 60) {
-      status = 'Bardzo dobry';
+      status = 'veryGood';
       variant = 'default';
     } else if (score >= 40) {
-      status = 'Dobry';
+      status = 'good';
       variant = 'secondary';
     } else if (score >= 20) {
-      status = 'Słaby';
+      status = 'poor';
       variant = 'outline';
     } else {
-      status = 'Krytyczny';
+      status = 'critical';
       variant = 'destructive';
     }
 
@@ -198,14 +200,19 @@ const BudgetApp = () => {
   );
 
   const formatCurrency = (value: number): string => {
-    return new Intl.NumberFormat('pl-PL', {
+    const locale = i18n.language === 'pl' ? 'pl-PL' : 'en-US';
+    const currency = i18n.language === 'pl' ? 'PLN' : 'USD';
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: currency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(value) + ' zł';
+    }).format(value);
   };
 
   const formatDate = (date: Date): string => {
-    return new Intl.DateTimeFormat('pl-PL', {
+    const locale = i18n.language === 'pl' ? 'pl-PL' : 'en-US';
+    return new Intl.DateTimeFormat(locale, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -215,27 +222,21 @@ const BudgetApp = () => {
   };
 
   const getPeriodLabel = (period: RecurrencePeriod): string => {
-    const labels = {
-      daily: 'Dziennie',
-      weekly: 'Tygodniowo',
-      monthly: 'Miesięcznie',
-      yearly: 'Rocznie',
-    };
-    return labels[period];
+    return t(`period.${period}`);
   };
 
   return (
     <div className="container mx-auto p-4 max-w-4xl">
       <Card className="w-full">
         <CardHeader>
-          <h2 className="text-3xl font-bold text-center text-primary">Budżet Osobisty</h2>
+          <h2 className="text-3xl font-bold text-center text-primary">{t('app.title')}</h2>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Transaction Type Tabs */}
           <Tabs value={transactionType} onValueChange={(v) => setTransactionType(v as TransactionType)}>
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="expense">Wydatki</TabsTrigger>
-              <TabsTrigger value="income">Przychody</TabsTrigger>
+              <TabsTrigger value="expense">{t('tabs.expenses')}</TabsTrigger>
+              <TabsTrigger value="income">{t('tabs.income')}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="expense" className="mt-4">
@@ -251,7 +252,7 @@ const BudgetApp = () => {
                     }`}
                     onClick={() => setSelectedCategory(category)}
                   >
-                    <span className="text-xs">{category}</span>
+                    <span className="text-xs">{t(`categories.expense.${category}`)}</span>
                   </Button>
                 ))}
               </div>
@@ -270,7 +271,7 @@ const BudgetApp = () => {
                     }`}
                     onClick={() => setSelectedCategory(category)}
                   >
-                    <span className="text-xs">{category}</span>
+                    <span className="text-xs">{t(`categories.income.${category}`)}</span>
                   </Button>
                 ))}
               </div>
@@ -281,7 +282,7 @@ const BudgetApp = () => {
           <div className="flex flex-wrap gap-2">
             <Input
               type="number"
-              placeholder="Kwota"
+              placeholder={t('input.amount')}
               className="flex-1 min-w-[120px]"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
@@ -297,10 +298,10 @@ const BudgetApp = () => {
               value={recurrencePeriod}
               onChange={(e) => setRecurrencePeriod(e.target.value as RecurrencePeriod)}
             >
-              <option value="daily">Dziennie</option>
-              <option value="weekly">Tygodniowo</option>
-              <option value="monthly">Miesięcznie</option>
-              <option value="yearly">Rocznie</option>
+              <option value="daily">{t('period.daily')}</option>
+              <option value="weekly">{t('period.weekly')}</option>
+              <option value="monthly">{t('period.monthly')}</option>
+              <option value="yearly">{t('period.yearly')}</option>
             </select>
 
             <div className="flex items-center space-x-2 px-3">
@@ -312,22 +313,22 @@ const BudgetApp = () => {
                 onChange={(e) => setIsRecurring(e.target.checked)}
               />
               <label htmlFor="recurring" className="text-sm font-medium">
-                Cykliczne
+                {t('input.recurring')}
               </label>
             </div>
 
             <Button onClick={addTransaction} className="min-w-[80px]">
-              Dodaj
+              {t('input.add')}
             </Button>
           </div>
 
           {/* Transactions List */}
           <div>
-            <h3 className="text-xl font-semibold mb-3">Twoje transakcje:</h3>
+            <h3 className="text-xl font-semibold mb-3">{t('transactions.title')}</h3>
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {transactions.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">
-                  Brak transakcji. Dodaj swoją pierwszą transakcję powyżej!
+                  {t('transactions.empty')}
                 </p>
               ) : (
                 transactions.map((transaction) => (
@@ -341,7 +342,9 @@ const BudgetApp = () => {
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold">{transaction.category}</span>
+                        <span className="font-semibold">
+                          {t(`categories.${transaction.type}.${transaction.category}`)}
+                        </span>
                         {transaction.isRecurring && (
                           <Badge variant="outline" className="text-xs">
                             {getPeriodLabel(transaction.recurrencePeriod!)}
@@ -378,26 +381,26 @@ const BudgetApp = () => {
 
           {/* Budget Summary */}
           <div>
-            <h3 className="text-xl font-semibold mb-3">Podsumowanie budżetu:</h3>
+            <h3 className="text-xl font-semibold mb-3">{t('summary.title')}</h3>
             <Tabs value={summaryPeriod} onValueChange={(v) => setSummaryPeriod(v as RecurrencePeriod)}>
               <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="daily">Dziennie</TabsTrigger>
-                <TabsTrigger value="weekly">Tygodniowo</TabsTrigger>
-                <TabsTrigger value="monthly">Miesięcznie</TabsTrigger>
-                <TabsTrigger value="yearly">Rocznie</TabsTrigger>
+                <TabsTrigger value="daily">{t('period.daily')}</TabsTrigger>
+                <TabsTrigger value="weekly">{t('period.weekly')}</TabsTrigger>
+                <TabsTrigger value="monthly">{t('period.monthly')}</TabsTrigger>
+                <TabsTrigger value="yearly">{t('period.yearly')}</TabsTrigger>
               </TabsList>
 
               {(['daily', 'weekly', 'monthly', 'yearly'] as RecurrencePeriod[]).map((period) => (
                 <TabsContent key={period} value={period}>
                   <div className="space-y-3 mt-3">
                     <div className="flex justify-between items-center p-3 rounded-lg bg-green-50 border border-green-200">
-                      <span className="font-medium">Całkowite przychody:</span>
+                      <span className="font-medium">{t('summary.totalIncome')}</span>
                       <span className="font-semibold text-green-600 text-lg">
                         {formatCurrency(budgetSummary.totalIncome)}
                       </span>
                     </div>
                     <div className="flex justify-between items-center p-3 rounded-lg bg-red-50 border border-red-200">
-                      <span className="font-medium">Całkowite wydatki:</span>
+                      <span className="font-medium">{t('summary.totalExpenses')}</span>
                       <span className="font-semibold text-red-600 text-lg">
                         {formatCurrency(budgetSummary.totalExpenses)}
                       </span>
@@ -407,7 +410,7 @@ const BudgetApp = () => {
                         ? 'bg-green-50 border-green-200'
                         : 'bg-red-50 border-red-200'
                     }`}>
-                      <span className="font-medium">Bilans:</span>
+                      <span className="font-medium">{t('summary.balance')}</span>
                       <span className={`font-bold text-xl ${
                         budgetSummary.balance >= 0 ? 'text-green-600' : 'text-red-600'
                       }`}>
@@ -423,11 +426,11 @@ const BudgetApp = () => {
 
           {/* Financial Health Indicator */}
           <div className="flex justify-between items-center p-4 rounded-lg bg-muted">
-            <span className="font-semibold text-lg">Wskaźnik Zdrowia Finansowego:</span>
+            <span className="font-semibold text-lg">{t('health.title')}</span>
             <div className="flex items-center gap-3">
               <span className="font-bold text-2xl">{financialHealth.score}/100</span>
               <Badge variant={financialHealth.variant} className="text-sm px-3 py-1">
-                {financialHealth.status}
+                {t(`health.${financialHealth.status}`)}
               </Badge>
             </div>
           </div>

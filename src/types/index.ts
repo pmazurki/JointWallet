@@ -1,7 +1,7 @@
 export type TransactionType = 'expense' | 'income';
 
-export type ExpenseCategory = 'Jedzenie' | 'Transport' | 'Rozrywka' | 'Mieszkanie' | 'Inne';
-export type IncomeCategory = 'Wynagrodzenie' | 'Freelance' | 'Inwestycje' | 'Prezent' | 'Inne';
+export type ExpenseCategory = 'food' | 'transport' | 'entertainment' | 'housing' | 'other';
+export type IncomeCategory = 'salary' | 'freelance' | 'investments' | 'gift' | 'other';
 
 export type RecurrencePeriod = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
@@ -24,6 +24,6 @@ export interface BudgetSummary {
 
 export interface FinancialHealth {
   score: number;
-  status: 'Krytyczny' | 'Słaby' | 'Dobry' | 'Bardzo dobry' | 'Doskonały';
+  status: 'critical' | 'poor' | 'good' | 'veryGood' | 'excellent';
   variant: 'destructive' | 'secondary' | 'default' | 'outline';
 }

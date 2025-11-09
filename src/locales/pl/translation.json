@@ -1,0 +1,57 @@
+{
+  "app": {
+    "title": "Budżet Osobisty"
+  },
+  "tabs": {
+    "expenses": "Wydatki",
+    "income": "Przychody"
+  },
+  "categories": {
+    "expense": {
+      "food": "Jedzenie",
+      "transport": "Transport",
+      "entertainment": "Rozrywka",
+      "housing": "Mieszkanie",
+      "other": "Inne"
+    },
+    "income": {
+      "salary": "Wynagrodzenie",
+      "freelance": "Freelance",
+      "investments": "Inwestycje",
+      "gift": "Prezent",
+      "other": "Inne"
+    }
+  },
+  "input": {
+    "amount": "Kwota",
+    "recurring": "Cykliczne",
+    "add": "Dodaj"
+  },
+  "period": {
+    "daily": "Dziennie",
+    "weekly": "Tygodniowo",
+    "monthly": "Miesięcznie",
+    "yearly": "Rocznie"
+  },
+  "transactions": {
+    "title": "Twoje transakcje:",
+    "empty": "Brak transakcji. Dodaj swoją pierwszą transakcję powyżej!"
+  },
+  "summary": {
+    "title": "Podsumowanie budżetu:",
+    "totalIncome": "Całkowite przychody:",
+    "totalExpenses": "Całkowite wydatki:",
+    "balance": "Bilans:"
+  },
+  "health": {
+    "title": "Wskaźnik Zdrowia Finansowego:",
+    "excellent": "Doskonały",
+    "veryGood": "Bardzo dobry",
+    "good": "Dobry",
+    "poor": "Słaby",
+    "critical": "Krytyczny"
+  },
+  "messages": {
+    "invalidAmount": "Proszę wprowadzić prawidłową kwotę"
+  }
+}

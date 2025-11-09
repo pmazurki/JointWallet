@@ -1,0 +1,57 @@
+{
+  "app": {
+    "title": "Personal Budget"
+  },
+  "tabs": {
+    "expenses": "Expenses",
+    "income": "Income"
+  },
+  "categories": {
+    "expense": {
+      "food": "Food",
+      "transport": "Transport",
+      "entertainment": "Entertainment",
+      "housing": "Housing",
+      "other": "Other"
+    },
+    "income": {
+      "salary": "Salary",
+      "freelance": "Freelance",
+      "investments": "Investments",
+      "gift": "Gift",
+      "other": "Other"
+    }
+  },
+  "input": {
+    "amount": "Amount",
+    "recurring": "Recurring",
+    "add": "Add"
+  },
+  "period": {
+    "daily": "Daily",
+    "weekly": "Weekly",
+    "monthly": "Monthly",
+    "yearly": "Yearly"
+  },
+  "transactions": {
+    "title": "Your transactions:",
+    "empty": "No transactions. Add your first transaction above!"
+  },
+  "summary": {
+    "title": "Budget summary:",
+    "totalIncome": "Total income:",
+    "totalExpenses": "Total expenses:",
+    "balance": "Balance:"
+  },
+  "health": {
+    "title": "Financial Health Score:",
+    "excellent": "Excellent",
+    "veryGood": "Very Good",
+    "good": "Good",
+    "poor": "Poor",
+    "critical": "Critical"
+  },
+  "messages": {
+    "invalidAmount": "Please enter a valid amount"
+  }
+}

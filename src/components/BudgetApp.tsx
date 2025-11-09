@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Lock, Plus, Users, Share2, Copy, Check, Calculator, Zap } from 'lucide-react';
 import {
   Transaction,
   TransactionType,
@@ -13,13 +13,34 @@ import {
   RecurrencePeriod,
   BudgetSummary,
   FinancialHealth,
+  AppData,
+  Budget,
+  BudgetType,
 } from '@/types';
+import { PINAuth } from './PINAuth';
+import { DailyBudgetTracker } from './DailyBudgetTracker';
+import { QuickExpenseTracker } from './QuickExpenseTracker';
+import {
+  saveEncryptedData,
+  loadEncryptedData,
+  setupPIN,
+  isPINSetup,
+  hasEncryptedData,
+} from '@/lib/storage';
+import { generateShareToken } from '@/lib/encryption';
+import { calculate503020Rule } from '@/lib/budgetRules';
+import { calculateBalance } from '@/lib/bankReconciliation';
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = ['Jedzenie', 'Transport', 'Rozrywka', 'Mieszkanie', 'Inne'];
 const INCOME_CATEGORIES: IncomeCategory[] = ['Wynagrodzenie', 'Freelance', 'Inwestycje', 'Prezent', 'Inne'];
 
 const BudgetApp = () => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [currentPIN, setCurrentPIN] = useState<string>('');
+  const [appData, setAppData] = useState<AppData | null>(null);
+  const [activeBudgetId, setActiveBudgetId] = useState<string>('');
+
+  // Transaction form state
   const [transactionType, setTransactionType] = useState<TransactionType>('expense');
   const [selectedCategory, setSelectedCategory] = useState<ExpenseCategory | IncomeCategory>('Jedzenie');
   const [amount, setAmount] = useState<string>('');
@@ -27,30 +48,128 @@ const BudgetApp = () => {
   const [recurrencePeriod, setRecurrencePeriod] = useState<RecurrencePeriod>('monthly');
   const [summaryPeriod, setSummaryPeriod] = useState<RecurrencePeriod>('monthly');
 
-  // Load transactions from localStorage on mount
-  useEffect(() => {
-    const savedTransactions = localStorage.getItem('budgetTransactions');
-    if (savedTransactions) {
-      try {
-        const parsed = JSON.parse(savedTransactions);
-        // Convert date strings back to Date objects
-        const withDates = parsed.map((t: any) => ({
-          ...t,
-          date: new Date(t.date),
-        }));
-        setTransactions(withDates);
-      } catch (error) {
-        console.error('Error loading transactions:', error);
-      }
-    }
-  }, []);
+  // UI state
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
+  const [activeView, setActiveView] = useState<'budget' | 'daily' | 'quick'>('budget');
 
-  // Save transactions to localStorage whenever they change
-  useEffect(() => {
-    if (transactions.length > 0) {
-      localStorage.setItem('budgetTransactions', JSON.stringify(transactions));
+  // Budget planning state
+  const [monthlyIncome] = useState<number>(3000); // Default
+  const [fixedExpenses] = useState<number>(1500); // Default
+
+  // Initialize app data
+  const initializeAppData = (): AppData => {
+    const userId = Date.now().toString();
+    const personalBudgetId = `budget-${userId}-personal`;
+
+    return {
+      version: '1.0.0',
+      user: {
+        id: userId,
+        name: 'Użytkownik',
+        createdAt: new Date(),
+      },
+      budgets: [
+        {
+          id: personalBudgetId,
+          name: 'Budżet Osobisty',
+          type: 'personal',
+          transactions: [],
+          createdAt: new Date(),
+          color: '#3b82f6',
+        },
+      ],
+      activeBudgetId: personalBudgetId,
+    };
+  };
+
+  // Handle PIN setup (first time)
+  const handlePINSetup = async (pin: string) => {
+    try {
+      await setupPIN(pin);
+      setCurrentPIN(pin);
+
+      // Initialize new app data
+      const newAppData = initializeAppData();
+      await saveEncryptedData(newAppData, pin);
+
+      setAppData(newAppData);
+      setActiveBudgetId(newAppData.activeBudgetId);
+      setIsUnlocked(true);
+    } catch (error) {
+      console.error('Failed to setup PIN:', error);
+      alert('Nie udało się ustawić PIN-u. Spróbuj ponownie.');
     }
-  }, [transactions]);
+  };
+
+  // Handle unlock with existing PIN
+  const handleUnlock = async (pin: string) => {
+    try {
+      const data = await loadEncryptedData<AppData>(pin);
+      if (!data) {
+        throw new Error('Nie znaleziono danych');
+      }
+
+      // Convert date strings back to Date objects
+      const processedData: AppData = {
+        ...data,
+        user: {
+          ...data.user,
+          createdAt: new Date(data.user.createdAt),
+        },
+        budgets: data.budgets.map((budget) => ({
+          ...budget,
+          createdAt: new Date(budget.createdAt),
+          transactions: budget.transactions.map((t) => ({
+            ...t,
+            date: new Date(t.date),
+          })),
+          shareInfo: budget.shareInfo
+            ? {
+                ...budget.shareInfo,
+                createdAt: new Date(budget.shareInfo.createdAt),
+                lastSyncedAt: budget.shareInfo.lastSyncedAt
+                  ? new Date(budget.shareInfo.lastSyncedAt)
+                  : undefined,
+              }
+            : undefined,
+        })),
+      };
+
+      setCurrentPIN(pin);
+      setAppData(processedData);
+      setActiveBudgetId(processedData.activeBudgetId);
+      setIsUnlocked(true);
+    } catch (error) {
+      console.error('Failed to unlock:', error);
+      throw error;
+    }
+  };
+
+  // Lock the app
+  const lockApp = () => {
+    setIsUnlocked(false);
+    setCurrentPIN('');
+    setAppData(null);
+  };
+
+  // Save app data
+  const saveAppData = async (data: AppData) => {
+    if (!currentPIN) return;
+    try {
+      await saveEncryptedData(data, currentPIN);
+      setAppData(data);
+    } catch (error) {
+      console.error('Failed to save data:', error);
+      alert('Nie udało się zapisać danych');
+    }
+  };
+
+  // Get active budget
+  const activeBudget = useMemo(() => {
+    if (!appData) return null;
+    return appData.budgets.find((b: Budget) => b.id === activeBudgetId) || null;
+  }, [appData, activeBudgetId]);
 
   // Update selected category when transaction type changes
   useEffect(() => {
@@ -61,7 +180,10 @@ const BudgetApp = () => {
     }
   }, [transactionType]);
 
+  // Add transaction
   const addTransaction = () => {
+    if (!appData || !activeBudget) return;
+
     const numAmount = parseFloat(amount);
 
     if (isNaN(numAmount) || numAmount <= 0) {
@@ -79,12 +201,96 @@ const BudgetApp = () => {
       recurrencePeriod: isRecurring ? recurrencePeriod : undefined,
     };
 
-    setTransactions([newTransaction, ...transactions]);
+    const updatedBudgets = appData.budgets.map((budget: Budget) =>
+      budget.id === activeBudgetId
+        ? {
+            ...budget,
+            transactions: [newTransaction, ...budget.transactions],
+          }
+        : budget
+    );
+
+    saveAppData({
+      ...appData,
+      budgets: updatedBudgets,
+    });
+
     setAmount('');
   };
 
+  // Delete transaction
   const deleteTransaction = (id: string) => {
-    setTransactions(transactions.filter(t => t.id !== id));
+    if (!appData || !activeBudget) return;
+
+    const updatedBudgets = appData.budgets.map((budget: Budget) =>
+      budget.id === activeBudgetId
+        ? {
+            ...budget,
+            transactions: budget.transactions.filter((t: Transaction) => t.id !== id),
+          }
+        : budget
+    );
+
+    saveAppData({
+      ...appData,
+      budgets: updatedBudgets,
+    });
+  };
+
+  // Create new budget
+  const createBudget = (name: string, type: BudgetType) => {
+    if (!appData) return;
+
+    const newBudget: Budget = {
+      id: `budget-${Date.now()}`,
+      name,
+      type,
+      transactions: [],
+      createdAt: new Date(),
+      color: type === 'shared' ? '#10b981' : '#3b82f6',
+    };
+
+    saveAppData({
+      ...appData,
+      budgets: [...appData.budgets, newBudget],
+    });
+  };
+
+  // Share budget
+  const shareBudget = () => {
+    if (!appData || !activeBudget) return;
+
+    const shareToken = generateShareToken();
+
+    const updatedBudgets = appData.budgets.map((budget: Budget) =>
+      budget.id === activeBudgetId
+        ? {
+            ...budget,
+            shareInfo: {
+              shareToken,
+              sharedWith: [],
+              createdAt: new Date(),
+            },
+          }
+        : budget
+    );
+
+    saveAppData({
+      ...appData,
+      budgets: updatedBudgets,
+    });
+
+    setShowShareModal(true);
+  };
+
+  // Copy share link
+  const copyShareLink = () => {
+    if (!activeBudget?.shareInfo) return;
+
+    const shareLink = `${window.location.origin}?join=${activeBudget.shareInfo.shareToken}`;
+    navigator.clipboard.writeText(shareLink);
+    setCopiedToken(true);
+    setTimeout(() => setCopiedToken(false), 2000);
   };
 
   // Calculate days in period
@@ -97,48 +303,48 @@ const BudgetApp = () => {
     }
   };
 
-  // Calculate budget summary for a given period
-  const calculateBudgetSummary = (period: RecurrencePeriod): BudgetSummary => {
+  // Normalize transactions for period
+  const normalizeTransactions = (transactions: Transaction[], period: RecurrencePeriod): Transaction[] => {
     const daysInPeriod = getDaysInPeriod(period);
 
-    let totalIncome = 0;
-    let totalExpenses = 0;
-
-    transactions.forEach(transaction => {
-      const transactionAmount = transaction.amount;
-      let normalizedAmount = 0;
-
+    return transactions.map((transaction) => {
       if (transaction.isRecurring && transaction.recurrencePeriod) {
         const transactionDays = getDaysInPeriod(transaction.recurrencePeriod);
-        // Calculate how many times this recurring transaction occurs in the period
         const occurrences = daysInPeriod / transactionDays;
-        normalizedAmount = transactionAmount * occurrences;
-      } else {
-        // One-time transaction: include it as-is
-        normalizedAmount = transactionAmount;
+        return {
+          ...transaction,
+          amount: transaction.amount * occurrences,
+        };
       }
-
-      if (transaction.type === 'income') {
-        totalIncome += normalizedAmount;
-      } else {
-        totalExpenses += normalizedAmount;
-      }
+      return transaction;
     });
+  };
+
+  // Calculate budget summary
+  const budgetSummary = useMemo((): BudgetSummary => {
+    if (!activeBudget) {
+      return { totalIncome: 0, totalExpenses: 0, balance: 0 };
+    }
+
+    const normalized = normalizeTransactions(activeBudget.transactions, summaryPeriod);
+
+    const totalIncome = normalized
+      .filter((t) => t.type === 'income')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalExpenses = normalized
+      .filter((t) => t.type === 'expense')
+      .reduce((sum, t) => sum + t.amount, 0);
 
     return {
       totalIncome,
       totalExpenses,
       balance: totalIncome - totalExpenses,
     };
-  };
+  }, [activeBudget, summaryPeriod]);
 
-  const budgetSummary = useMemo(
-    () => calculateBudgetSummary(summaryPeriod),
-    [transactions, summaryPeriod]
-  );
-
-  // Calculate financial health score
-  const calculateFinancialHealth = (): FinancialHealth => {
+  // Calculate financial health
+  const financialHealth = useMemo((): FinancialHealth => {
     const { totalIncome, totalExpenses, balance } = budgetSummary;
 
     if (totalIncome === 0) {
@@ -148,7 +354,6 @@ const BudgetApp = () => {
     const savingsRate = (balance / totalIncome) * 100;
     const expenseRatio = (totalExpenses / totalIncome) * 100;
 
-    // Calculate score based on multiple factors
     let score = 0;
 
     // Savings rate (0-50 points)
@@ -190,13 +395,16 @@ const BudgetApp = () => {
     }
 
     return { score, status, variant };
-  };
+  }, [budgetSummary]);
 
-  const financialHealth = useMemo(
-    () => calculateFinancialHealth(),
-    [budgetSummary]
-  );
+  // Calculate 50/30/20 rule
+  const budgetRule = useMemo(() => {
+    if (!activeBudget) return null;
+    const normalized = normalizeTransactions(activeBudget.transactions, summaryPeriod);
+    return calculate503020Rule(activeBudget.transactions, normalized);
+  }, [activeBudget, summaryPeriod]);
 
+  // Format functions
   const formatCurrency = (value: number): string => {
     return new Intl.NumberFormat('pl-PL', {
       minimumFractionDigits: 2,
@@ -224,15 +432,158 @@ const BudgetApp = () => {
     return labels[period];
   };
 
+  // Show PIN auth if not unlocked
+  if (!isUnlocked) {
+    const needsSetup = !isPINSetup() || !hasEncryptedData();
+    return (
+      <PINAuth
+        mode={needsSetup ? 'setup' : 'unlock'}
+        onSuccess={needsSetup ? handlePINSetup : handleUnlock}
+      />
+    );
+  }
+
+  if (!appData || !activeBudget) {
+    return null;
+  }
+
   return (
     <div className="container mx-auto p-4 max-w-4xl">
       <Card className="w-full">
         <CardHeader>
-          <h2 className="text-3xl font-bold text-center text-primary">Budżet Osobisty</h2>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-4 h-4 rounded-full"
+                style={{ backgroundColor: activeBudget.color }}
+              />
+              <h2 className="text-3xl font-bold text-primary">{activeBudget.name}</h2>
+              {activeBudget.type === 'shared' && (
+                <Badge variant="outline" className="flex items-center gap-1">
+                  <Users className="w-3 h-3" />
+                  Wspólny
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="icon" onClick={lockApp}>
+                <Lock className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </CardHeader>
+
         <CardContent className="space-y-6">
-          {/* Transaction Type Tabs */}
-          <Tabs value={transactionType} onValueChange={(v) => setTransactionType(v as TransactionType)}>
+          {/* Budget Selector */}
+          <div className="flex flex-wrap gap-2">
+            {appData.budgets.map((budget: Budget) => (
+              <Button
+                key={budget.id}
+                variant={activeBudgetId === budget.id ? 'default' : 'outline'}
+                onClick={() => setActiveBudgetId(budget.id)}
+                className="flex items-center gap-2"
+              >
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: budget.color }}
+                />
+                {budget.name}
+                {budget.type === 'shared' && <Users className="w-3 h-3" />}
+              </Button>
+            ))}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                const name = prompt('Nazwa budżetu:');
+                if (name) createBudget(name, 'personal');
+              }}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={shareBudget}
+              className="flex items-center gap-2"
+            >
+              <Share2 className="w-4 h-4" />
+              Udostępnij budżet
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const name = prompt('Nazwa wspólnego budżetu:');
+                if (name) createBudget(name, 'shared');
+              }}
+              className="flex items-center gap-2"
+            >
+              <Users className="w-4 h-4" />
+              Utwórz wspólny budżet
+            </Button>
+          </div>
+
+          {/* View Selector */}
+          <div className="flex gap-2 p-1 bg-muted rounded-lg">
+            <Button
+              variant={activeView === 'daily' ? 'default' : 'ghost'}
+              onClick={() => setActiveView('daily')}
+              className="flex-1 flex items-center gap-2"
+            >
+              <Calculator className="w-4 h-4" />
+              Dzienny Budżet
+            </Button>
+            <Button
+              variant={activeView === 'quick' ? 'default' : 'ghost'}
+              onClick={() => setActiveView('quick')}
+              className="flex-1 flex items-center gap-2"
+            >
+              <Zap className="w-4 h-4" />
+              Szybkie Wydatki
+            </Button>
+            <Button
+              variant={activeView === 'budget' ? 'default' : 'ghost'}
+              onClick={() => setActiveView('budget')}
+              className="flex-1"
+            >
+              Pełny Budżet
+            </Button>
+          </div>
+
+          {/* Daily Budget View */}
+          {activeView === 'daily' && (
+            <DailyBudgetTracker
+              transactions={activeBudget.transactions}
+              monthlyIncome={monthlyIncome}
+              fixedExpenses={fixedExpenses}
+              currentSavings={calculateBalance(activeBudget.transactions)}
+            />
+          )}
+
+          {/* Quick Expense View */}
+          {activeView === 'quick' && (
+            <QuickExpenseTracker
+              transactions={activeBudget.transactions}
+              currentBalance={calculateBalance(activeBudget.transactions)}
+              onAddTransaction={(tx) => {
+                const updatedBudgets = appData.budgets.map((budget: Budget) =>
+                  budget.id === activeBudgetId
+                    ? { ...budget, transactions: [tx, ...budget.transactions] }
+                    : budget
+                );
+                saveAppData({ ...appData, budgets: updatedBudgets });
+              }}
+            />
+          )}
+
+          {/* Full Budget View (original) */}
+          {activeView === 'budget' && (
+            <>
+              {/* Transaction Type Tabs */}
+          <Tabs value={transactionType} onValueChange={(v: string) => setTransactionType(v as TransactionType)}>
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="expense">Wydatki</TabsTrigger>
               <TabsTrigger value="income">Przychody</TabsTrigger>
@@ -325,12 +676,12 @@ const BudgetApp = () => {
           <div>
             <h3 className="text-xl font-semibold mb-3">Twoje transakcje:</h3>
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {transactions.length === 0 ? (
+              {activeBudget.transactions.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">
                   Brak transakcji. Dodaj swoją pierwszą transakcję powyżej!
                 </p>
               ) : (
-                transactions.map((transaction) => (
+                activeBudget.transactions.map((transaction) => (
                   <div
                     key={transaction.id}
                     className={`flex items-center justify-between p-3 rounded-lg border ${
@@ -379,7 +730,7 @@ const BudgetApp = () => {
           {/* Budget Summary */}
           <div>
             <h3 className="text-xl font-semibold mb-3">Podsumowanie budżetu:</h3>
-            <Tabs value={summaryPeriod} onValueChange={(v) => setSummaryPeriod(v as RecurrencePeriod)}>
+            <Tabs value={summaryPeriod} onValueChange={(v: string) => setSummaryPeriod(v as RecurrencePeriod)}>
               <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="daily">Dziennie</TabsTrigger>
                 <TabsTrigger value="weekly">Tygodniowo</TabsTrigger>
@@ -431,8 +782,71 @@ const BudgetApp = () => {
               </Badge>
             </div>
           </div>
+
+          {/* 50/30/20 Rule Analysis */}
+          {budgetRule && budgetSummary.totalIncome > 0 && (
+            <div className="p-4 rounded-lg border bg-card">
+              <h3 className="text-lg font-semibold mb-3">Analiza 50/30/20:</h3>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>Potrzeby (50%):</span>
+                  <span className="font-semibold">{formatCurrency(budgetRule.allocation.needs)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Przyjemności (30%):</span>
+                  <span className="font-semibold">{formatCurrency(budgetRule.allocation.wants)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Oszczędności (20%):</span>
+                  <span className={`font-semibold ${budgetRule.allocation.savings < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {formatCurrency(budgetRule.allocation.savings)}
+                  </span>
+                </div>
+                {budgetRule.warnings.length > 0 && (
+                  <div className="mt-3 pt-3 border-t">
+                    <p className="text-sm font-medium mb-2">Ostrzeżenia:</p>
+                    {budgetRule.warnings.map((warning, i) => (
+                      <p key={i} className="text-sm text-orange-600 dark:text-orange-400">
+                        • {warning}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+            </>
+          )}
         </CardContent>
       </Card>
+
+      {/* Share Modal */}
+      {showShareModal && activeBudget.shareInfo && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <Card className="max-w-md w-full">
+            <CardHeader>
+              <h3 className="text-xl font-semibold">Udostępnij budżet</h3>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Udostępnij poniższy link partnerowi, aby dołączył do tego budżetu:
+              </p>
+              <div className="p-3 bg-muted rounded-md break-all text-sm font-mono">
+                {window.location.origin}?join={activeBudget.shareInfo.shareToken}
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={copyShareLink} className="flex-1 flex items-center gap-2">
+                  {copiedToken ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copiedToken ? 'Skopiowano!' : 'Kopiuj link'}
+                </Button>
+                <Button variant="outline" onClick={() => setShowShareModal(false)}>
+                  Zamknij
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };
